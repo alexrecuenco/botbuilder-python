@@ -26,6 +26,8 @@ from botbuilder.schema.teams import (
     TeamsPagedMembersResult,
     TeamsMeetingParticipant,
 )
+from botframework.connector.teams.operations.teams_operations import TeamsOperations
+from botframework.connector.teams.operations.teams_operations_extensions import TeamsOperationsExtensions
 
 
 class TeamsInfo:
@@ -363,6 +365,7 @@ class TeamsInfo:
         continuation_token: str = None,
         page_size: int = None,
     ) -> List[TeamsPagedMembersResult]:
+        
         if connector_client is None:
             raise TypeError(
                 "TeamsInfo._get_paged_members.connector_client: cannot be None."
@@ -401,3 +404,103 @@ class TeamsInfo:
         return TeamsChannelAccount().deserialize(
             dict(member.serialize(), **member.additional_properties)
         )
+    
+    async def send_message_to_list_of_users(turn_context: TurnContext, activity: Activity, teams_members: list, tenant_id: str, cancellation_token=None):
+        if activity is None:
+            raise ValueError("activity is required.")
+        if teams_members is None:
+            raise ValueError("teams_members is required.")
+        if tenant_id is None:
+            raise ValueError("tenant_id is required.")
+        
+        teams_client = TeamsInfo.get_teams_connector_client(turn_context)
+        return await TeamsOperations.send_message_to_list_of_users_async(activity, teams_members, tenant_id, cancellation_token)
+
+
+    def get_teams_connector_client(turn_context: TurnContext) -> TeamsConnectorClient:
+        connector_client = TeamsInfo.get_connector_client(turn_context)
+        
+        if isinstance(connector_client, ConnectorClient):
+            return TeamsConnectorClient(
+                connector_client.config.base_url,
+                connector_client.credentials,
+                connector_client.pipeline._http_client if connector_client.pipeline._http_client is not None else None,
+                not connector_client.pipeline._http_client
+            )
+        else:
+            return TeamsConnectorClient(
+                connector_client.config.base_url,
+                connector_client.credentials
+            )
+        
+    def get_connector_client(turn_context: TurnContext) -> ConnectorClient:
+        connector_client = turn_context.turn_state.get(ConnectorClient)
+        if connector_client is None:
+            raise ValueError("This method requires a connector client.")
+        return connector_client
+    
+    async def send_message_to_all_users_in_tenant(turn_context: TurnContext, activity: Activity, tenant_id: str, cancellation_token=None):
+        if activity is None:
+            raise ValueError("activity is required.")
+        if tenant_id is None:
+            raise ValueError("tenant_id is required.")
+        
+        teams_client = TeamsInfo.get_teams_connector_client(turn_context)
+        return await TeamsOperationsExtensions.send_message_to_all_users_in_tenant_async(activity, tenant_id, cancellation_token)
+    
+    async def send_message_to_all_users_in_team_async(turn_context, activity, team_id, tenant_id, cancellationToken=None):
+        if not activity:
+            raise ValueError("Activity is required.")
+
+        if not team_id:
+            raise ValueError("Team ID is required.")
+
+        if not tenant_id:
+            raise ValueError("Tenant ID is required.")
+
+        teams_client = TeamsInfo.get_teams_connector_client(turn_context)
+
+        try:
+            return await TeamsOperationsExtensions.send_message_to_all_users_in_team_async(activity, team_id, tenant_id, cancellationToken=cancellationToken)
+        finally:
+            await teams_client.close()
+
+    async def send_message_to_list_of_channels_async(turn_context, activity, channels_members, tenant_id, cancellationToken=None):
+        if not activity:
+            raise ValueError("Activity is required.")
+
+        if not channels_members:
+            raise ValueError("Channels members list is required.")
+
+        if not tenant_id:
+            raise ValueError("Tenant ID is required.")
+
+        teams_client = TeamsInfo.get_teams_connector_client(turn_context)
+
+        try:
+            return await TeamsOperationsExtensions.send_message_to_list_of_channels_async(activity, channels_members, tenant_id, cancellationToken=cancellationToken)
+        finally:
+            await teams_client.close()
+
+
+    async def get_operation_state_async(turn_context, operation_id, cancellationToken=None):
+        if not operation_id:
+            raise ValueError("Operation ID is required.")
+
+        teams_client = TeamsInfo.get_teams_connector_client(turn_context)
+
+        try:
+            return await TeamsOperationsExtensions.get_operation_state_async(operation_id, cancellationToken=cancellationToken)
+        finally:
+            await teams_client.close()
+
+    async def get_paged_failed_entries_async(turn_context, operation_id, continuation_token=None, cancellationToken=None):
+        if not operation_id:
+            raise ValueError("Operation ID is required.")
+
+        teams_client = TeamsInfo.get_teams_connector_client(turn_context)
+
+        try:
+            return await TeamsOperationsExtensions.get_paged_failed_entries_async(operation_id, continuation_token=continuation_token, cancellationToken=cancellationToken)
+        finally:
+            await teams_client.close() 
