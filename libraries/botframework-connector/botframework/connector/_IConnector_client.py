@@ -2,8 +2,7 @@ import json
 from typing import Optional
 from urllib.parse import urlparse
 
-from botframework.connector._IAttachments import IAttachments
-from botframework.connector._IConversations import IConversations
+from botbuilder.schema._models_py3 import Attachment, ConversationsResult
 
 class IConnectorClient:
     def __init__(self, base_uri: Optional[str] = None):
@@ -34,11 +33,11 @@ class IConnectorClient:
 
     @property
     def attachments(self):
-        return IAttachments()
+        return Attachment()
 
     @property
     def conversations(self):
-        return IConversations()
+        return ConversationsResult()
 
 class JsonSerializerSettings:
     pass

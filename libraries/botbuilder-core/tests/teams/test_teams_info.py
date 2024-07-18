@@ -1,16 +1,22 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
+import asyncio
 import http
+import json
+from typing import List
+import unittest
 import pytest
+from requests import patch
 import aiohttp
 from aiohttp.skills.skill_http_client import SkillHttpClient
-import aiounittest
 from aiohttp import web
 from aiohttp.web import middleware
 
 from botbuilder.core.adapters.test_adapter import TestAdapter
 from botbuilder.core.bot_framework_adapter import BotFrameworkAdapter
+from botbuilder.schema.teams._models_py3 import TaskModuleContinueResponse, TaskModuleTaskInfo
+from botbuilder.schema.teams.meeting_notification_base import MeetingNotificationBase
 from botframework.connector import Channels
 
 from aiohttp import ClientSession, ClientResponse
@@ -23,6 +29,7 @@ from botbuilder.schema import (
     ChannelAccount,
     ConversationAccount,
 )
+from botframework.connector import _IConnector_client
 from botframework.connector._IConnector_client import IConnectorClient
 from botframework.connector.auth.microsoft_app_credentials import MicrosoftAppCredentials
 from botframework.connector.connector_client import ConnectorClient
@@ -43,7 +50,7 @@ ACTIVITY = Activity(
 )
 
 
-class TestTeamsInfo(aiounittest.AsyncTestCase):
+class TestTeamsInfo(unittest.AsyncTestCase):
     async def test_send_message_to_teams_channels_without_activity(self):
         def create_conversation():
             pass
@@ -305,7 +312,7 @@ class TestTeamsInfo(aiounittest.AsyncTestCase):
         activity = {
             "type": "message",
             "text": "Test-SendMessageToAllUsersInTenantAsync",
-            "channelId": Channels.MSTEAMS,
+            "channelId": Channels.ms_teams,
             "serviceUrl": "https://test.coffee",
             "from": {
                 "id": "id-1",
@@ -345,14 +352,167 @@ class TestTeamsInfo(aiounittest.AsyncTestCase):
         
         await handler.on_turn(turn_context)
 
-        
+
+    async def test_send_message_to_list_of_channels_async(status_code: str):
+    # 201: created
+    # 400: when send message to list of channels request payload validation fails.
+    # 403: if the bot is not allowed to send messages.
+    # 429: too many requests for throttled requests.
+
+        base_uri = "https://test.coffee"
+        custom_http_client = RosterHttpMessageHandler()
+        custom_http_client.base_address = base_uri
+        connector_client = ConnectorClient(
+            "http://localhost/",
+            MicrosoftAppCredentials("", ""),
+            custom_http_client
+        )
+
+        activity = Activity(
+            type="message",
+            text="Test-SendMessageToListOfChannelsAsync",
+            channel_id=Channels.ms_teams,
+            service_url="https://test.coffee",
+            from_property=ChannelAccount(
+                id="id-1",
+                name=status_code  # Hack for test. use the Name field to pass expected status code to test code
+            ),
+            conversation=ConversationAccount(id="conversation-id")
+        )
+
+        turn_context = TurnContext(SimpleAdapter(), activity)
+        turn_context.turn_state[IConnectorClient] = connector_client
+        handler = TestTeamsActivityHandler()
+        await handler.on_turn(turn_context)
+
+    @patch('builtins.input', return_value='200')
+    @patch('botbuilder.core.connector.HttpClient')
+    async def test_get_operation_state_async(self, mock_http_client, mock_input):
+        # 200: ok
+        # 400: for requests with invalid operationId (Which should be of type GUID).
+        # 429: too many requests for throttled requests.
+
+        base_uri = 'https://test.coffee'
+        custom_http_client = mock_http_client()
+        custom_http_client.BaseAddress = base_uri
+        connector_client = ConnectorClient(base_uri, MicrosoftAppCredentials('', ''), custom_http_client)
+
+        activity = Activity(
+            type='message',
+            text='Test-GetOperationStateAsync',
+            channel_id=Channels.ms_teams,
+            service_url='https://test.coffee',
+            from_property=ChannelAccount(id='id-1', name=mock_input.return_value),
+            conversation=ConversationAccount(id='conversation-id')
+        )
+
+        turn_context = TurnContext(SimpleAdapter(), activity)
+        turn_context.turn_state[IConnectorClient] = connector_client
+        handler = TestTeamsActivityHandler()
+        await handler.on_turn(turn_context)
+
+
+    async def test_get_paged_failed_entries_async(self, mock_http_client):
+        status_codes = ["200", "400", "429"]
+
+        for status_code in status_codes:
+            with self.subTest(status_code=status_code):
+                base_uri = "https://test.coffee"
+                custom_http_client = mock_http_client.return_value
+                custom_http_client.base_address = base_uri
+
+                connector_client = ConnectorClient(
+                    base_url=f"http://localhost/",
+                    credentials=MicrosoftAppCredentials("", ""),
+                    http_client=custom_http_client
+                )
+
+                activity = Activity(
+                    type="message",
+                    text="Test-GetPagedFailedEntriesAsync",
+                    channel_id=Channels.ms_teams,
+                    service_url="https://test.coffee",
+                    from_property=ChannelAccount(
+                        id="id-1",
+                        name=status_code
+                    ),
+                    conversation=ConversationAccount(id="conversation-id")
+                )
+
+                turn_context = TurnContext(SimpleAdapter(), activity)
+                turn_context.turn_state[IConnectorClient] = connector_client
+
+                handler = TestTeamsActivityHandler()
+                await handler.on_turn(turn_context)
+
+
+    async def test_cancel_operation_async(status_code: str):
+        # 200: Ok for successful cancelled operations (Operations in state completed, or failed will not change state to cancel but still return 200)
+        # 400: for requests with invalid operationId (Which should be of type GUID).
+        # 429: too many requests for throttled requests.
+
+        base_uri = 'https://test.coffee'
+        custom_http_client = RosterHttpMessageHandler()
+
+        # Set a special base address so then we can make sure the connector client is honoring this http client
+        custom_http_client.base_url = base_uri
+        connector_client = ConnectorClient('http://localhost/', MicrosoftAppCredentials('', ''), custom_http_client)
+
+        activity = Activity(
+            type='message',
+            text='Test-CancelOperationAsync',
+            channel_id=Channels.ms_teams,
+            service_url='https://test.coffee',
+            from_=ChannelAccount(id='id-1', name=status_code),
+            conversation=ConversationAccount(id='conversation-id')
+        )
+
+        turn_context = TurnContext(SimpleAdapter(), activity)
+        turn_context.set_connector_client(connector_client)
+        turn_context._turn_state[_IConnector_client] = connector_client
+        handler = TestTeamsActivityHandler()
+        await handler.on_turn(turn_context)    
 
 class TestTeamsActivityHandler(TeamsActivityHandler):
     async def on_turn(self, turn_context: TurnContext):
         await super().on_turn(turn_context)
 
-        if turn_context.activity.text == "test_send_message_to_teams_channel":
+        text = turn_context.activity.text
+        if text == "test_get_team_details":
+            await self.call_get_team_details(turn_context)
+        elif text == "test_team_get_members":
+            await self.call_team_get_members(turn_context)
+        elif text == "test_group_chat_get_members":
+            await self.call_group_chat_get_members(turn_context)
+        elif text == "test_get_channels":
+            await self.call_get_channels(turn_context)
+        elif text == "test_send_message_to_teams_channel":
             await self.call_send_message_to_teams(turn_context)
+        elif text == "test_get_get_member":
+            await self.call_team_get_member(turn_context)
+        elif text == "test_get_participant":
+            await self.call_teams_info_get_participant(turn_context)
+        elif text == "test_get_meeting_info":
+            await self.call_teams_info_get_meeting_info(turn_context)
+        elif text == "Ttest_send_meeting_notification":
+            await self.call_send_meeting_notification(turn_context)
+        elif text == "test_send_message_to_list_of_users":
+            await self.call_send_message_to_list_of_users(turn_context)
+        elif text == "test_send_message_to_all_users_in_tenant":
+            await self.call_send_message_to_all_users_in_tenant(turn_context)
+        elif text == "test_send_message_to_all_users_in_team":
+            await self.call_send_message_to_all_users_in_team(turn_context)
+        elif text == "test_send_message_to_list_of_channels":
+            await self.call_send_message_to_list_of_channels(turn_context)
+        elif text == "test_get_operation_state":
+            await self.call_get_operation_state(turn_context)
+        elif text == "test_get_paged_failed_entries":
+            await self.call_get_paged_failed_entries(turn_context)
+        elif text == "test_cancel_operation":
+            await self.call_cancel_operation(turn_context)
+        else:
+            raise AssertionError("Unexpected activity text")
+        
 
     async def call_send_message_to_teams(self, turn_context: TurnContext):
         msg = MessageFactory.text("call_send_message_to_teams")
@@ -363,6 +523,131 @@ class TestTeamsActivityHandler(TeamsActivityHandler):
 
         assert reference[0].activity_id == "new_conversation_id"
         assert reference[1] == "reference123"
+
+    async def call_group_chat_get_members(turn_context: TurnContext) -> None:
+        members = await TeamsInfo.get_members(turn_context)
+        members = list(members)
+
+        assert members[0].id == "id-3"
+        assert members[0].name == "name-3"
+        assert members[0].given_name == "givenName-3"
+        assert members[0].surname == "surname-3"
+        assert members[0].user_principal_name == "userPrincipalName-3"
+
+        assert members[1].id == "id-4"
+        assert members[1].name == "name-4"
+        assert members[1].given_name == "givenName-4"
+        assert members[1].surname == "surname-4"
+        assert members[1].user_principal_name == "userPrincipalName-4"
+
+
+    async def call_get_team_details(self, turn_context: TurnContext):
+        msg = MessageFactory.text("call_get_team_details")
+        team_details = await TeamsInfo.get_team_details(turn_context,msg)
+
+        assert team_details.id == "team-id"
+        assert team_details.name == "team-name"
+        assert team_details.aad_group_id == "team-aadgroupid"
+
+    async def call_team_get_members(self, turn_context: TurnContext):
+        members = await TeamsInfo.get_members(turn_context)
+        assert members[0].id == "id-1"
+        assert members[0].name == "name-1"
+        assert members[0].given_name == "givenName-1"
+        assert members[0].surname == "surname-1"
+        assert members[0].user_principal_name == "userPrincipalName-1"
+
+        assert members[1].id == "id-2"
+        assert members[1].name == "name-2"
+        assert members[1].given_name == "givenName-2"
+        assert members[1].surname == "surname-2"
+        assert members[1].user_principal_name == "userPrincipalName-2"
+
+    async def call_get_channels(turn_context: TurnContext):
+        msg = MessageFactory.text("call_get_channels")
+        channels = await TeamsInfo.get_team_channels(turn_context,msg)
+        channels = list(channels)
+
+        assert channels[0].id == "channel-id-1"
+        assert channels[1].id == "channel-id-2"
+        assert channels[1].name == "channel-name-2"
+        assert channels[2].id == "channel-id-3"
+        assert channels[2].name == "channel-name-3"
+
+    async def call_team_get_member(turn_context: TurnContext):
+        member = await TeamsInfo.get_member(turn_context, turn_context.activity.from_property.id)
+
+        assert member.id == "id-1"
+        assert member.name == "name-1"
+        assert member.given_name == "givenName-1"
+        assert member.surname == "surname-1"
+        assert member.user_principal_name == "userPrincipalName-1"
+
+    async def call_teams_info_get_participant(turn_context: TurnContext):
+        participant = await TeamsInfo.get_meeting_participant(turn_context)
+
+        assert participant.meeting.role == "Organizer"
+        assert participant.conversation.id == "meetigConversationId-1"
+        assert participant.user.user_principal_name == "userPrincipalName-1"
+
+    async def call_teams_info_get_meeting_info(turn_context: TurnContext):
+        meeting = await TeamsInfo.get_meeting_info(turn_context)
+
+        assert meeting.details.id == "meeting-id"
+        assert meeting.organizer.id == "organizer-id"
+        assert meeting.conversation.id == "meetingConversationId-1"
+
+    async def call_send_meeting_notification(turn_context):
+        from_user = turn_context.activity.from_property
+
+        try:
+            failed_participants = await TeamsInfo.get_meeting_participant(
+                turn_context,
+                TestTeamsActivityHandler.get_targeted_meeting_notification(from_user),
+                "meeting-id"
+            )
+
+            if from_user.name == "207":
+                assert failed_participants.recipients_failure_info[0].recipient_mri == "failingid"
+            elif from_user.name == "202":
+                assert failed_participants is None
+            else:
+                raise Exception(f"Expected HttpResponseError with response status code {from_user.name}.")
+
+        except HttpResponseError as ex:
+            assert from_user.name == str(ex.response.status_code)
+            error_response = json.loads(ex.response.content)
+            
+            if from_user.name == "400":
+                assert error_response['error']['code'] == "BadSyntax"
+            elif from_user.name == "403":
+                assert error_response['error']['code'] == "BotNotInConversationRoster"
+            else:
+                raise Exception(f"Expected HttpResponseError with response status code {from_user.name}.")
+
+    def get_targeted_meeting_notification(from_account: dict) -> MeetingNotificationBase:
+        recipients = [from_account["Id"]]
+        if from_account["Name"] == "207":
+            recipients.append("failingid")
+
+        meeting_stage_surface = MeetingStageSurface(
+            TaskModuleContinueResponse(TaskModuleTaskInfo("title here", 3, 2)),
+            "Task"
+        )
+
+        meeting_tab_icon_surface = MeetingTabIconSurface("test tab entity id")
+
+        value = TargetedMeetingNotificationValue(
+            recipients,
+            [meeting_stage_surface, meeting_tab_icon_surface]
+        )
+
+        obo = OnBehalfOf(from_account["Name"], from_account["Id"])
+        channel_data = MeetingNotificationChannelData([obo])
+
+        return TargetedMeetingNotification(value, channel_data)
+
+
 
 
 

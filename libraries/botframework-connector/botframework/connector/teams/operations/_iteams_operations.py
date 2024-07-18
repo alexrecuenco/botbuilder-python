@@ -2,9 +2,7 @@
 # Licensed under the MIT License.
 
 from typing import List, Dict
-from botbuilder.schema.teams.conversation_list import ConversationList
-from botbuilder.schema.teams.team_details import TeamDetails
-from msrest import HttpOperationResponse
+from botbuilder.schema.teams._models_py3 import ConversationList, TeamDetails
 import asyncio
 
 class ITeamsOperations:
@@ -12,7 +10,7 @@ class ITeamsOperations:
     Interface for TeamsOperations operations.
     """
 
-    async def fetch_channel_list_with_http_messages_async(self, team_id: str, custom_headers: Dict[str, List[str]] = None, cancellationToken: asyncio.Event = None) -> HttpOperationResponse[ConversationList]:
+    async def fetch_channel_list_with_http_messages_async(self, team_id: str, custom_headers: Dict[str, List[str]] = None, cancellationToken: asyncio.Event = None) -> ConversationList:
         """
         Fetches channel list for a given team.
 
@@ -26,7 +24,7 @@ class ITeamsOperations:
         """
         raise NotImplementedError()
 
-    async def fetch_team_details_with_http_messages_async(self, team_id: str, custom_headers: Dict[str, List[str]] = None, cancellationToken: asyncio.Event = None) -> HttpOperationResponse[TeamDetails]:
+    async def fetch_team_details_with_http_messages_async(self, team_id: str, custom_headers: Dict[str, List[str]] = None, cancellationToken: asyncio.Event = None) -> TeamDetails:
         """
         Fetches details related to a team.
 

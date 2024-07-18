@@ -3,6 +3,8 @@ import asyncio
 from msrest.serialization import Deserializer
 from msrest.exceptions import HttpOperationError
 
+from botbuilder.schema._models_py3 import ConversationParameters
+
 from .models import ConversationsResult, ConversationResourceResponse, ResourceResponse, ChannelAccount, PagedMembersResult, Activity, Transcript, AttachmentData
 #from .parameters import ConversationParameters
 
